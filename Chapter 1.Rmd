@@ -1,0 +1,360 @@
+---
+title: A DINÂMICA DA PAISAGEM DA BACIA HIDROGRÁFICA DO RIO GUAPORÉ, RIO GRANDE DO
+  SUL, BRASIL
+author: "Lima, Edberto Moura"
+date: "20/04/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(rgdal)
+library(ggplot2)
+library(landscapemetrics)
+library(raster)
+library(rgeos)
+library(landscapemetrics)     # landscape metrics calculation
+library(raster)               # spatial raster data reading and handling
+library(sf)                   # spatial vector data reading and handling
+library(dplyr)                # data manipulation
+library(tidyr)
+library(networkD3)
+
+
+```
+
+
+### Mapa de cobertura e uso do solo
+
+As imagens de cobertura e uso do solo (LCUS), com resolução espacial de 30 m, da série histórica (1998, 2008 e 2018), serão acessadas diretamente do Projeto MAPBIOMAS (2019). Os mapas anuais de cobertura e uso do solo do MapBiomas são produzidos a partir de mosaicos de imagens Landsat. Para cada uma das setes banda bandas espectrais do satélite são extraídas métricas que explicam o comportamento do pixel naquele ano. Dentre as imagens disponíveis para o período, somente os pixels sem nuvem são selecionados, de modo a obter uma imagem limpa. Ao final cada pixel carrega até 105 camadas de informação para um ano. Os pixels são classificados automaticamente utilizando o algoritimo “random forest”, processados dentro da plataforma do Google Earth Engine. Para treinar o algoritmo, amostras dos alvos a serem classificados são obtidas de mapas de referência ou por coleta direta por interpretação visual das imagens Landsat. Em seguida, objetivando reduzir inconsistências temporais e corrigir falhas por excesso de nuvem ou falta de dados, são aplicadas regras de filtro temporal. Para gerar um mapa integrado para cada ano são aplicadas regras de prevalência determinadas conforme as peculiaridades dos biomas, temas ou regiões. Informações detalhadas referente a metodologia de classificação estão disponíveis no ATBD (Algorithm Theoretical Basis Document).
+
+```{MapsCover}
+
+setwd("D:\\Desktop\\Tese\\Raster")
+
+#TblLegend = read.delim("clipboard")
+
+raster.list = list.files(pattern = "*.tif$") #Ou .TIF, .tiff, etc
+rasters.anos = lapply(raster.list, raster) #Carregar rasters
+
+### Carregar Shapes
+
+shape = readOGR("..\\Shapes\\shpLimiteGrb.shp") #Shapefile com limites da bacia
+shaperio = readOGR("..\\Shapes\\shpDrenagem.shp")
+bufferland = readOGR("..\\Shapes\\shpBuffer5kmsquare.shp")
+
+shape.B = spTransform(shape,CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 "))
+shape.Rio = spTransform(shaperio,CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 "))
+
+polys =  readOGR("..\\Shapes\\shpClipLimitesMunicipio.shp")
+
+### Cortar e Reprojetar dados para UTM 
+
+rasters.corte = lapply(rasters.anos, function(x) crop(x, shape.B)) #Cortar rasters
+rasters.mask = lapply(rasters.corte, function(x) mask(x,shape.B)) 
+
+rasters.reproject = lapply(rasters.mask, function(x) projectRaster(x,res=30, crs="+proj=utm +zone=22 +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs", method = "ngb")) 
+shape.B = spTransform(shape,CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 "))
+shape.Rio = spTransform(shaperio,CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 "))
+shape.Rio_Df <- fortify(shape.Rio)
+
+s =  stack(rasters.reproject)
+
+#b =  brick(rasters.reproject)
+
+#bf <- writeRaster(b, filename=file.path("multi.tif"), 
+#                  options="INTERLEAVE=BAND", bylayer = T, suffix = names(b), overwrite=TRUE)
+
+names(s) = paste0(rep("mapa_Ano_",21),c(1998:2018))
+
+for(i in 1:length(rasters.reproject)){
+  writeRaster(s[[i]], filename = paste("..\\Processados\\",names(s[[i]]),".tif", sep=""))
+} # Salvar rasters cortadas
+freq(s[[21]])
+#Clean Memory
+rm(list=c("raster.list","rasters.anos","rasters.reproject","rasters.corte","rasters.mask","shape","shape.Rio"))
+
+###
+
+centroids <- gCentroid(bufferland, byid=TRUE)
+centroidLons <- coordinates(centroids)[,1]
+centroidLats <- coordinates(centroids)[,2]
+centroids@coords
+
+plot(centroids)
+###
+
+plot(s[[1]])
+plot(bufferland, add=T)
+text(centroidLons, centroidLats, labels=bufferland$Label, col="blue", cex=.7)
+
+x = spatialize_lsm(s[[1]], what = "lsm_p_area")
+x = sample_lsm(s,bufferland, plot_id = bufferland$Label, 
+                         what= c("lsm_p_area"))
+
+
+my_metric_l = sample_lsm(s,bufferland, plot_id = bufferland$Label, 
+                         what= c("lsm_l_ent","lsm_l_condent", "lsm_l_joinent","lsm_l_mutinf","lsm_l_np","lsm_l_lpi","lsm_l_area_mn","lsm_l_te","lsm_l_ed", "lsm_l_pd","lsm_l_shape_mn","lsm_l_tca","lsm_l_ndca","lsm_l_enn_mn","lsm_l_cohesion","lsm_l_iji","lsm_l_split","lsm_l_ai"))
+
+my_metric = sample_lsm(s,bufferland, plot_id = bufferland$Label, 
+                         what= c("lsm_l_ent","lsm_l_condent", "lsm_l_joinent","lsm_l_mutinf","lsm_l_np","lsm_l_lpi","lsm_l_area_mn","lsm_l_te","lsm_l_ed","lsm_l_pd","lsm_l_shape_mn","lsm_l_tca","lsm_l_ndca","lsm_l_enn_mn","lsm_l_cohesion","lsm_l_iji","lsm_l_split","lsm_l_ai","lsm_c_np","lsm_c_pland","lsm_c_lpi","lsm_c_area_mn","lsm_c_ca","lsm_c_te","lsm_c_ed","lsm_c_pd","lsm_c_shape_mn","lsm_c_tca","lsm_c_ndca","lsm_c_enn_mn","lsm_c_iji","lsm_c_split","lsm_c_ai", "lsm_c_cpland"))
+
+my_metric$year = factor(my_metric$layer)
+levels(my_metric$year) = c(1998:2018)
+
+my_metrics = pivot_wider(my_metric, names_from = metric, values_from = value)
+
+my_list_metric =   split( my_metric , f = my_metric$level )
+
+my_metricLand = pivot_wider(my_list_metric$landscape, names_from = metric, values_from = value)
+my_metricclass = pivot_wider(my_list_metric$class, names_from = metric, values_from = value)
+
+
+my_list_metric$class
+ggplot(subset(my_list_metric$class, my_list_metric$class$class == 3) , aes(year, value))+
+# ggplot(my_list_metric$landscape, aes(year, value, color =plot_id))+
+geom_point(aes(shape = plot_id, color = plot_id), size =1)+
+scale_x_discrete(breaks=c("1998","2008","2018"))+
+scale_shape_manual(values = c(0,1,2,4,5,15,16,17,8)) +
+labs(x = "", y = "", title = NULL)+
+theme_classic()+
+theme(legend.position = "bottom")+
+guides(shape = guide_legend(nrow = 1, title=""),
+       color = guide_legend(nrow = 1, title=""))+
+facet_wrap(~metric, scales="free")
+
+
+```
+
+
+
+```{r HYU diagram}
+
+my_metricLand = my_metric
+
+my_metricLand %>%
+filter(year == "1998"|year == "2008"|year == "2018") %>%
+  
+  
+  
+my_metricLand %>%
+filter(year == "1998"|year == "2008"|year == "2018") %>%
+ggplot(aes(x=ent, y=mutinf, color =plot_id,label = plot_id) )+
+  geom_point()+
+  geom_text(vjust = 0, nudge_x = 0.05) +
+  #scale_color_manual(values = c('#50c55a', '#3159cd', '#ff8579'))+
+  labs(x= "H(y) (marginal entropy)", y = "U (relative mutual information)") +
+  theme_classic()+
+  theme(legend.position =  "none")+
+  facet_grid(~year)
+
+
+# str(tbl.graph)
+# tbl.graph$ANOS = as.factor(tbl.graph$ANOS)
+# levels(tbl.graph$ANOS) = c("1998","2008","2018")
+#   
+#as.factor(tbl.graph$ANOS, levels =c("1998","2008","2018"))
+
+
+
+
+ggplot(data =tbl.graph, aes(x=ent, y=mutinf, color = ANOS,label = ANOS) )+
+  geom_point()+
+  geom_text(vjust = 0, nudge_x = 0.05) +
+  theme_classic()+
+  theme(legend.position =  "none")+
+  facet_grid(~Unidades)
+
+entmuti = dist.t1[c("ent","mutinf")]
+entmuti = round(entmuti,2)
+
+dist.t1 = my_metricLand %>%
+filter(year == "1998"|year == "2008"|year == "2018") %>%
+pivot_wider( names_from = metric, values_from = value)
+
+dist.t= split(dist.t1, f = dist.t1$year[drop = TRUE])
+
+dist.t1$cluster = 
+unlist(lapply(1:3, function(x){
+  dist(dist.t[[x]][c("ent","mutinf")], method = "euclidean")^2 %>%
+  hclust( method = "ward.D")%>%
+  cutree(3)
+  }
+))
+
+
+ggplot(data =dist.t1, aes(x=ent, y=mutinf, color =as.factor(cluster),label = plot_id ) )+
+  geom_point(aes(shape = factor(cluster)), size = 3)+
+  geom_text(vjust = 0, nudge_x = 0.05) +
+  scale_color_manual(values = c('#50c55a', '#3159cd', '#ff8579'))+
+  labs(x= "H(y) (marginal entropy)", y = "U (relative mutual information)") +
+  theme_classic()+
+  theme(legend.position =  "none")+
+  facet_grid(~year)
+
+
+
+```
+
+```{r}
+
+
+my_metricclass
+
+
+m = my_list_metric$class[,c(-1,-4,-8)] %>%
+filter( (year == "1998" | year == "2018" ) & class == 3 ) %>%
+  pivot_wider(names_from = year, values_from = value) 
+
+
+
+x %>%
+filter( (layer  == 1 | layer == 21) & class == 3 ) %>%
+pivot_wider(names_from = layer, values_from = value)  %>%
+  ggplot(aes(`1`))+
+  geom_histogram(breaks=seq(1, 100, by =10))+
+  facet_wrap(~plot_id )
+
+
+
+
+
+write.csv(as.data.frame(m), "resumometrica.csv")
+```
+
+
+```{r}
+plot(s)
+
+
+plot(s[[1]])
+plot(bufferland, add=T)
+text(centroidLons, centroidLats, labels=bufferland$Label, col="blue", cex=.7)
+
+
+
+
+```
+
+
+```{r}
+
+library(raster)
+library(networkD3)
+library(dplyr)
+
+#################################################################################################################################################
+#####  INPUTS  ##################################################################################################################################
+#################################################################################################################################################
+
+# define file info
+fileInfo <- data.frame(         nodeCol=1, rasterFile="D:/Desktop/Tese/Processados/mapa_Ano_1998.tif", rasterBand=1) %>%
+  rbind(data.frame(nodeCol=2, rasterFile="D:/Desktop/Tese/Processados/mapa_Ano_2008.tif", rasterBand=1)) %>%
+  rbind(data.frame(nodeCol=3, rasterFile="D:/Desktop/Tese/Processados/mapa_Ano_2018.tif", rasterBand=1))
+
+# define node info
+nodeInfo <- data.frame(         nodeName="1998 Forest Formation"      				, nodeID=0,  mapClass=3, nodeCol=1, nodeGroup='a') %>%
+  rbind(data.frame(nodeName="1998 Forest Plantation"    				, nodeID=1,  mapClass=9, nodeCol=1, nodeGroup='b')) %>%
+  rbind(data.frame(nodeName="1998 Grassland" 							, nodeID=2,  mapClass=12, nodeCol=1, nodeGroup='c')) %>%
+  rbind(data.frame(nodeName="1998 Pasture"   							, nodeID=3,  mapClass=15, nodeCol=1, nodeGroup='d')) %>%
+  rbind(data.frame(nodeName="1998 Annual and Perennial Crop"			, nodeID=4,  mapClass=19, nodeCol=1, nodeGroup='e')) %>%
+  rbind(data.frame(nodeName="1998 Mosaic of Agriculture and Pasture"	, nodeID=5,  mapClass=21, nodeCol=1, nodeGroup='f')) %>%
+  rbind(data.frame(nodeName="1998 Urban Infrastructure"				, nodeID=6,  mapClass=24, nodeCol=1, nodeGroup='g')) %>%
+  rbind(data.frame(nodeName="1998 Other Non Vegetated Area"			, nodeID=7,  mapClass=25, nodeCol=1, nodeGroup='h')) %>%
+  rbind(data.frame(nodeName="1998 River and Lake"                 		, nodeID=8,  mapClass=33, nodeCol=1, nodeGroup='i')) %>%
+  
+  rbind(data.frame(nodeName="2008 Forest Formation"      				, nodeID=9,  mapClass=3, nodeCol=2, nodeGroup='a')) %>%
+  rbind(data.frame(nodeName="2008 Forest Plantation"    				, nodeID=10,  mapClass=9, nodeCol=2, nodeGroup='b')) %>%
+  rbind(data.frame(nodeName="2008 Grassland" 							, nodeID=11,  mapClass=12, nodeCol=2, nodeGroup='c')) %>%
+  rbind(data.frame(nodeName="2008 Pasture"   							, nodeID=12,  mapClass=15, nodeCol=2, nodeGroup='d')) %>%
+  rbind(data.frame(nodeName="2008 Annual and Perennial Crop"			, nodeID=13,  mapClass=19, nodeCol=2, nodeGroup='e')) %>%
+  rbind(data.frame(nodeName="2008 Mosaic of Agriculture and Pasture"	, nodeID=14,  mapClass=21, nodeCol=2, nodeGroup='f')) %>%
+  rbind(data.frame(nodeName="2008 Urban Infrastructure"				, nodeID=15,  mapClass=24, nodeCol=2, nodeGroup='g')) %>%
+  rbind(data.frame(nodeName="2008 Other Non Vegetated Area"			, nodeID=16,  mapClass=25, nodeCol=2, nodeGroup='h')) %>%
+  rbind(data.frame(nodeName="2008 River and Lake"                 		, nodeID=17,  mapClass=33, nodeCol=2, nodeGroup='i')) %>%
+  
+  rbind(data.frame(nodeName="2018 Forest Formation"      				, nodeID=18,  mapClass=3, nodeCol=3, nodeGroup='a')) %>%
+  rbind(data.frame(nodeName="2018 Forest Plantation"    				, nodeID=19,  mapClass=9, nodeCol=3, nodeGroup='b')) %>%
+  rbind(data.frame(nodeName="2018 Grassland" 							, nodeID=20,  mapClass=12, nodeCol=3, nodeGroup='c')) %>%
+  rbind(data.frame(nodeName="2018 Pasture"   							, nodeID=21,  mapClass=15, nodeCol=3, nodeGroup='d')) %>%
+  rbind(data.frame(nodeName="2018 Annual and Perennial Crop"			, nodeID=22,  mapClass=19, nodeCol=3, nodeGroup='e')) %>%
+  rbind(data.frame(nodeName="2018 Mosaic of Agriculture and Pasture"	, nodeID=23,  mapClass=21, nodeCol=3, nodeGroup='f')) %>%
+  rbind(data.frame(nodeName="2018 Urban Infrastructure"				, nodeID=24,  mapClass=24, nodeCol=3, nodeGroup='g')) %>%
+  rbind(data.frame(nodeName="2018 Other Non Vegetated Area"			, nodeID=25,  mapClass=25, nodeCol=3, nodeGroup='h')) %>%
+  rbind(data.frame(nodeName="2018 River and Lake"                 		, nodeID=26,  mapClass=33, nodeCol=3, nodeGroup='i')) 
+
+
+# define group color - note that the colors correspond to the nodeGroups, one for each unique group, we have used (a, b, c, d, e, f) - color is applied in order
+
+groupColor <- c("#006400","#935132", "#B8AF4F", "#FFD966", "#D5A6BD", "#FFEFC3", "#af2a2a", "#FF99FF", "#0000FF")
+
+
+
+# define plot features
+fontSize <- 12
+fontFamily <- "Arial Black"
+nodeWidth <- 30
+
+
+#################################################################################################################################################
+#################################################################################################################################################
+#################################################################################################################################################
+
+
+# collapse groupColor to a string
+groupColor <- paste0('"',paste(groupColor, collapse = '", "'),'"')
+
+# join fileInfo to nodeInfo
+nodeInfo <- dplyr::left_join(nodeInfo, fileInfo, by='nodeCol')
+
+# convert factors to characters
+nodeInfo$nodeName <- as.character(nodeInfo$nodeName)
+nodeInfo$rasterFile <- as.character(nodeInfo$rasterFile)
+
+# define the the links
+NodeCols <- sort(unique(nodeInfo$nodeCol))
+linkInfo <- data.frame()
+for(i in 1:(length(NodeCols)-1)){
+  fromCol <- dplyr::filter(nodeInfo, nodeCol==NodeCols[i])
+  toCol <- dplyr::filter(nodeInfo, nodeCol==NodeCols[i+1])
+  fromR <- values(raster(fromCol$rasterFile[1], fromCol$rasterBand[1]))
+  toR <- values(raster(toCol$rasterFile[1], toCol$rasterBand[1]))
+  for(f in 1:nrow(fromCol)){
+    for(t in 1:nrow(toCol)){
+      nFromTo <- length(which(fromR == fromCol$mapClass[f] & toR == toCol$mapClass[t]))
+      linkInfo <- rbind(linkInfo, data.frame(source=fromCol$nodeID[f], target=toCol$nodeID[t], value=nFromTo))
+    }
+  }
+}
+
+# make the sankey plot
+sankeyNetwork(Links = linkInfo, Nodes = nodeInfo,
+              Source = "source",
+              Target = "target",
+              Value = "value",
+              NodeID = "nodeName",
+              NodeGroup = "nodeGroup",
+              LinkGroup = "color",
+              nodePadding = 15,
+              fontSize = fontSize,
+              #iterations = 64,
+              fontFamily = fontFamily,
+              nodeWidth = 25,
+              colourScale = paste0('d3.scaleOrdinal().range([',groupColor,'])'),
+              sinksRight = T)
+
+
+linkInfo$cover_type <- 
+
+nodeInfo$colorG <-rep(groupColor,3)
+  
+linkInfo$color <- rep(groupColor,18)
+
+
+paste0('d3.scaleOrdinal().range([',nodeGroup,'])'))
+
+```
+
