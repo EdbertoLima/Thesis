@@ -1,0 +1,287 @@
+---
+title: "From inmet to SWAT WGN"
+author: "Lima, M. Edberto"
+date: "4/27/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+
+```
+
+
+### Brazilian Weather Stations to Swat 
+
+This script helps to convert the Weather stations data from inmet to csv files to be used on swat anayslis.
+
+The weather data could be download from https://bdmep.inmet.gov.br/
+
+
+```{r Import inmet files - AutomaticStations}
+
+### https://bdmep.inmet.gov.br/
+
+# setwd("C:\\SWAT\\ArcSWAT\\Databases\\Tese\\Gauges")
+
+setwd("C:\\SWAT\\ArcSWAT\\Databases\\Tese\\Gauges")
+
+list.weatherStations = list.files(path = ".\\Automatic",pattern = "*.csv")
+
+list.weatherStations = paste0(".\\Automatic\\",list.weatherStations)
+
+weatherStations = lapply(list.weatherStations, function(x){
+ read.delim(x, skip = 10, sep = ";" ,na.strings = "null", col.names = c("Date","PCP","ATMpress","DEWPT","TMPmax","TMPmea","TMPmin","HMD","HMDmin","WNDmax","WND","NA"))[,1:11]})
+
+Head.weatherStations = lapply(list.weatherStations, function(x){
+ read.delim(x, nrows = 8, header = FALSE, col.names = c("Cod","Infor"), sep = ":")})
+
+df_list.SWAT = lapply(1:length(Head.weatherStations), function(x){
+  output_df = data.frame("Code" = gsub(" ", "", Head.weatherStations[[x]][2,"Infor"]),
+                         "Name" = gsub(" ", "", Head.weatherStations[[x]][1,"Infor"]),
+                         "Latitude" = Head.weatherStations[[x]][3,"Infor"],
+                         "Longitude" = Head.weatherStations[[x]][4,"Infor"],
+                         "Elevation" = Head.weatherStations[[x]][5,"Infor"],
+                         "Date" =  format(as.Date(weatherStations[[x]][,"Date"]),"%m%d%Y"),
+                         "HMD" = weatherStations[[x]][,"HMD"],
+                         "PCP" = weatherStations[[x]][,"PCP"],
+                         "TMPmax" = weatherStations[[x]][,"TMPmax"],
+                         "TMPmin" = weatherStations[[x]][,"TMPmin"],
+                         "WND" = weatherStations[[x]][,"WND"])
+})
+
+df_list.FileInfo = lapply(1:length(df_list.SWAT), function(x){
+  output_df = data.frame("ID" = unique(df_list.SWAT[[x]][,"Code"]),
+                         "Name" = gsub("-", "", paste0(unique(df_list.SWAT[[x]][,"Code"]),"_",weatherStations[[x]][1,"Date"], "_",weatherStations[[x]][dim(df_list.SWAT[[x]])[1],"Date"])),
+                         "LAT" = unique(df_list.SWAT[[x]][,"Latitude"]),
+                         "LONG" = unique(df_list.SWAT[[x]][,"Longitude"]),
+                         "ELEVATION" = unique(df_list.SWAT[[x]][,"Elevation"]),
+                         "StationName" = unique(df_list.SWAT[[x]][,"Name"]))
+  })
+
+df_list.FileInfo = do.call(rbind, df_list.FileInfo)
+full_df = do.call(rbind, df_list.SWAT)
+
+full_df = full_df  %>% 
+  mutate_all(funs(replace_na(., -99.0)))
+full_df$Date = as.Date(full_df$Date, "%m/%d/%Y")
+
+List.WeatherStaGrb = full_df %>%
+                filter(Code %in% c("A828","A837","A839","A840","A844","A853","A856","A880","A882","A883","A894")) %>%    
+  group_split(Code)
+
+### TXT files to The Relative Humidity Table (HMD)
+
+lapply(1:length(List.WeatherStaGrb), function(x){
+          write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[1]], Date = format(Date , "%Y%m%d"))[,"Date"]),
+      List.WeatherStaGrb[[1]][,c("HMD")]),
+                      col.names = FALSE, 
+                      row.names	= F,
+                      sep = ",",
+                      file=paste0("HMD_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",List.WeatherStaGrb[[x]][1,"Date"], "_",List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[1]])[x],"Date"],".txt"))
+})
+
+### TXT files to The Temperature Table (TMP) 
+
+lapply(1:length(List.WeatherStaGrb), function(x){
+          write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[1]], Date = format(Date , "%Y%m%d"))[,"Date"]),
+      List.WeatherStaGrb[[1]][,c("TMPmax")],
+       List.WeatherStaGrb[[1]][,c("TMPmin")]),
+                      col.names = FALSE, 
+                      row.names	= F,
+                      sep = ",",
+                      file=paste0("TMP_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",List.WeatherStaGrb[[x]][1,"Date"], "_",List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[1]])[x],"Date"],".txt"))
+})
+
+### TXT files The Wind Speed Table (WND) 
+
+
+lapply(1:length(List.WeatherStaGrb), function(x){
+          write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[1]], Date = format(Date , "%Y%m%d"))[,"Date"]),
+      List.WeatherStaGrb[[1]][,c("WND")]),
+                      col.names = FALSE, 
+                      row.names	= F,
+                      sep = ",",
+                      file=paste0("WND_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",List.WeatherStaGrb[[x]][1,"Date"], "_",List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[1]])[x],"Date"],".txt"))
+})
+
+
+
+
+
+
+
+
+write.csv(df_list.FileInfo[df_list.FileInfo$ID %in% c("A828","A837","A839","A840","A844","A853","A856","A880","A882","A883","A894"),], "AutomaticStation_Fork.csv" , row.names	= F)
+
+
+
+
+
+
+```
+
+```{r PlotData}
+
+
+lapply(1:11,function(x){
+ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=HMD))+
+  geom_line()+
+    scale_x_date(date_labels = "%b %Y",
+               limit=c(as.Date("2005-01-01"),as.Date("2020-12-31")))+
+  ylim(c(0,100))+
+  theme_bw()
+  })
+
+
+lapply(1:11,function(x){
+ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=TMPmax))+
+  geom_line()+
+    scale_x_date(date_labels = "%b %Y",
+               limit=c(as.Date("2005-01-01"),as.Date("2020-12-31")))+
+  ylim(c(0,50))+
+  theme_bw()
+  })
+
+lapply(1:11,function(x){
+ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=TMPmin))+
+  geom_line()+
+    scale_x_date(date_labels = "%b %Y",
+               limit=c(as.Date("2005-01-01"),as.Date("2020-12-31")))+
+  ylim(c(-8,30))+
+  theme_bw()
+  })
+
+lapply(1:11,function(x){
+ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=WND))+
+  geom_line()+
+    scale_x_date(date_labels = "%b %Y",
+               limit=c(as.Date("2005-01-01"),as.Date("2020-12-31")))+
+  ylim(c(0,20))+
+  theme_bw()
+  })
+
+
+
+```
+
+
+
+
+
+
+```{r Import inmet files - Conventional_Stations}
+
+
+list.weatherStations = list.files(path = ".\\NonAutomatic",pattern = "*.csv")[-54] 
+list.weatherStations = paste0(".\\NonAutomatic\\",list.weatherStations)
+
+
+weatherStations = lapply(list.weatherStations, function(x){
+ read.delim(x, skip = 10, sep = ";" ,na.strings = "null", col.names = c("Date","EVAP","INSO","PCP","TMPmax","TMPmea","TMPmin","HMD","WND","NA"))[,1:9]})
+
+Head.weatherStations = lapply(list.weatherStations, function(x){
+ read.delim(x, nrows = 8, header = FALSE, col.names = c("Cod","Infor"), sep = ":")})
+
+df_list.SWAT = lapply(1:length(Head.weatherStations), function(x){
+  output_df = data.frame("Code" = gsub(" ", "",Head.weatherStations[[x]][2,"Infor"]),
+                         "Name" = gsub(" ", "", Head.weatherStations[[x]][1,"Infor"]),
+                         "Latitude" = Head.weatherStations[[x]][3,"Infor"],
+                         "Longitude" = Head.weatherStations[[x]][4,"Infor"],
+                         "Elevation" = Head.weatherStations[[x]][5,"Infor"],
+                         "Date" =  format(as.Date(weatherStations[[x]][,"Date"]),"%m/%d/%Y"),
+                         "HMD" = weatherStations[[x]][,"HMD"],
+                         "PCP" = weatherStations[[x]][,"PCP"],
+                         "TMPmax" = weatherStations[[x]][,"TMPmax"],
+                         "TMPmin" = weatherStations[[x]][,"TMPmin"],
+                         "WND" = weatherStations[[x]][,"WND"],
+                         "INSO" = weatherStations[[x]][,"INSO"])
+})
+
+
+df_list.FileInfo = lapply(1:length(df_list.SWAT), function(x){
+  output_df = data.frame("ID" = unique(df_list.SWAT[[x]][,"Code"]),
+                         "Name" = gsub("-", "", paste0(unique(df_list.SWAT[[x]][,"Code"]),"_",weatherStations[[x]][1,"Date"], "_",weatherStations[[x]][dim(df_list.SWAT[[x]])[1],"Date"])),
+                         "LAT" = unique(df_list.SWAT[[x]][,"Latitude"]),
+                         "LONG" = unique(df_list.SWAT[[x]][,"Longitude"]),
+                         "ELEVATION" = unique(df_list.SWAT[[x]][,"Elevation"]),
+                         "StationName" = unique(df_list.SWAT[[x]][,"Name"]))
+  })
+
+
+df_list.FileInfo = do.call(rbind, df_list.FileInfo)
+full_df = do.call(rbind, df_list.SWAT)
+
+full_df = full_df  %>% 
+  mutate_all(funs(replace_na(., -99.0)))
+full_df$Date = as.Date(full_df$Date, "%m/%d/%Y")
+
+List.WeatherStaGrb = full_df %>%
+                filter(Code %in% c("83972","83932","83942","83941","83914","83917","83916")) %>%                 group_split(Code)
+
+write.csv(df_list.FileInfo[df_list.FileInfo$ID %in% c("83972","83932","83942","83941","83914","83917","83916"),] , "NonAutomaticStation_Fork.csv" , row.names	= F)
+
+
+
+?write.csv
+```
+
+
+
+```{r PlotDataConv}
+
+
+lapply(1:7,function(x){
+ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=HMD))+
+  geom_line()+
+    scale_x_date(date_labels = "%b %Y",
+               limit=c(as.Date("1998-01-01"),as.Date("2020-12-31")))+
+  ylim(c(0,100))+
+  theme_bw()
+  })
+
+
+lapply(1:7,function(x){
+ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=TMPmax))+
+  geom_line()+
+    scale_x_date(date_labels = "%b %Y",
+               limit=c(as.Date("1998-01-01"),as.Date("2020-12-31")))+
+  ylim(c(-5,50))+
+  theme_bw()
+  })
+
+lapply(1:7,function(x){
+ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=TMPmin))+
+  geom_line()+
+    scale_x_date(date_labels = "%b %Y",
+               limit=c(as.Date("1998-01-01"),as.Date("2020-12-31")))+
+  ylim(c(-10,30))+
+  theme_bw()
+  })
+
+lapply(1:7,function(x){
+ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=WND))+
+  geom_line()+
+    scale_x_date(date_labels = "%b %Y",
+               limit=c(as.Date("1998-01-01"),as.Date("2020-12-31")))+
+  ylim(c(0,25))+
+  theme_bw()
+  })
+
+lapply(1:7,function(x){
+ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=INSO))+
+  geom_line()+
+    scale_x_date(date_labels = "%b %Y",
+               limit=c(as.Date("1998-01-01"),as.Date("2020-12-31")))+
+  ylim(c(0,24))+
+  theme_bw()
+  })
+
+```
