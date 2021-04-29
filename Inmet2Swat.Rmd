@@ -49,12 +49,71 @@ df_list.SWAT = lapply(1:length(Head.weatherStations), function(x){
                          "Latitude" = Head.weatherStations[[x]][3,"Infor"],
                          "Longitude" = Head.weatherStations[[x]][4,"Infor"],
                          "Elevation" = Head.weatherStations[[x]][5,"Infor"],
-                         "Date" =  format(as.Date(weatherStations[[x]][,"Date"]),"%m%d%Y"),
+                         "Date" =  format(as.Date(weatherStations[[x]][,"Date"]),"%m/%d/%Y"),
                          "HMD" = weatherStations[[x]][,"HMD"],
                          "PCP" = weatherStations[[x]][,"PCP"],
                          "TMPmax" = weatherStations[[x]][,"TMPmax"],
                          "TMPmin" = weatherStations[[x]][,"TMPmin"],
                          "WND" = weatherStations[[x]][,"WND"])
+})
+
+full_df = do.call(rbind, df_list.SWAT)
+full_df[is.na(full_df)] <- -99.0
+full_df$Date = as.Date(full_df$Date, "%m/%d/%Y")
+
+List.WeatherStaGrb = full_df %>%
+                 arrange(Date , Code) %>%
+                filter(Code %in% c("A828","A837","A839","A840","A844","A853","A856","A880","A882","A883","A894")) %>%    
+  group_split(Code)
+
+
+
+### TXT files to The Relative Humidity Table (HMD)
+
+lapply(1:length(List.WeatherStaGrb), function(x){
+  write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[x]][,"Date"], Date = format(Date , "%Y%m%d"))[,1]),
+                    # List.WeatherStaGrb[[x]][,c("PCP")]),
+              signif(List.WeatherStaGrb[[x]][,c("HMD")],4)),
+              col.names = FALSE, 
+              row.names	= F,
+              sep = ",",
+              file=paste0("HMD_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",
+                          as.numeric(transform(List.WeatherStaGrb[[x]][1,"Date"], Date = format(Date , "%Y%m%d"))), "_",
+                          as.numeric(transform(List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[x]])[1],"Date"], Date = format(Date , "%Y%m%d"))),
+                          ".txt"))
+})
+
+
+### TXT files to The Temperature Table (TMP) 
+
+
+
+lapply(1:length(List.WeatherStaGrb), function(x){
+  write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[x]][,"Date"], Date = format(Date , "%Y%m%d"))[,1]),
+              signif(List.WeatherStaGrb[[x]][,c("TMPmax")],4),
+              signif(List.WeatherStaGrb[[x]][,c("TMPmin")],4)),
+              col.names = FALSE, 
+              row.names	= F,
+              sep = ",",
+              file=paste0("TMP_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",
+                          as.numeric(transform(List.WeatherStaGrb[[x]][1,"Date"], Date = format(Date , "%Y%m%d"))), "_",
+                          as.numeric(transform(List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[x]])[1],"Date"], Date = format(Date , "%Y%m%d"))),
+                          ".txt"))
+})
+
+
+### TXT files The Wind Speed Table (WND) 
+
+lapply(1:length(List.WeatherStaGrb), function(x){
+  write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[x]][,"Date"], Date = format(Date , "%Y%m%d"))[,1]),
+              signif(List.WeatherStaGrb[[x]][,c("WND")],4)),
+              col.names = FALSE, 
+              row.names	= F,
+              sep = ",",
+              file=paste0("WND_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",
+                          as.numeric(transform(List.WeatherStaGrb[[x]][1,"Date"], Date = format(Date , "%Y%m%d"))), "_",
+                          as.numeric(transform(List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[x]])[1],"Date"], Date = format(Date , "%Y%m%d"))),
+                          ".txt"))
 })
 
 df_list.FileInfo = lapply(1:length(df_list.SWAT), function(x){
@@ -66,70 +125,32 @@ df_list.FileInfo = lapply(1:length(df_list.SWAT), function(x){
                          "StationName" = unique(df_list.SWAT[[x]][,"Name"]))
   })
 
-df_list.FileInfo = do.call(rbind, df_list.FileInfo)
-full_df = do.call(rbind, df_list.SWAT)
-
-full_df = full_df  %>% 
-  mutate_all(funs(replace_na(., -99.0)))
-full_df$Date = as.Date(full_df$Date, "%m/%d/%Y")
-
-List.WeatherStaGrb = full_df %>%
-                filter(Code %in% c("A828","A837","A839","A840","A844","A853","A856","A880","A882","A883","A894")) %>%    
-  group_split(Code)
-
-### TXT files to The Relative Humidity Table (HMD)
-
-lapply(1:length(List.WeatherStaGrb), function(x){
-          write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[1]], Date = format(Date , "%Y%m%d"))[,"Date"]),
-      List.WeatherStaGrb[[1]][,c("HMD")]),
-                      col.names = FALSE, 
-                      row.names	= F,
-                      sep = ",",
-                      file=paste0("HMD_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",List.WeatherStaGrb[[x]][1,"Date"], "_",List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[1]])[x],"Date"],".txt"))
-})
-
-### TXT files to The Temperature Table (TMP) 
-
-lapply(1:length(List.WeatherStaGrb), function(x){
-          write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[1]], Date = format(Date , "%Y%m%d"))[,"Date"]),
-      List.WeatherStaGrb[[1]][,c("TMPmax")],
-       List.WeatherStaGrb[[1]][,c("TMPmin")]),
-                      col.names = FALSE, 
-                      row.names	= F,
-                      sep = ",",
-                      file=paste0("TMP_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",List.WeatherStaGrb[[x]][1,"Date"], "_",List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[1]])[x],"Date"],".txt"))
-})
-
-### TXT files The Wind Speed Table (WND) 
+df_list.FileInfo <- do.call(rbind, df_list.FileInfo)
+df_list.FileInfo <- df_list.FileInfo[df_list.FileInfo$ID %in% c("A828","A837","A839","A840","A844","A853","A856","A880","A882","A883","A894"),]
 
 
-lapply(1:length(List.WeatherStaGrb), function(x){
-          write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[1]], Date = format(Date , "%Y%m%d"))[,"Date"]),
-      List.WeatherStaGrb[[1]][,c("WND")]),
-                      col.names = FALSE, 
-                      row.names	= F,
-                      sep = ",",
-                      file=paste0("WND_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",List.WeatherStaGrb[[x]][1,"Date"], "_",List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[1]])[x],"Date"],".txt"))
+varString <- c("HMD","WND","TMP" )
+
+List_Fork = lapply(1:length(varString), function(x){
+      output_df = data.frame( "ID" = df_list.FileInfo[,"ID"],
+                              "NAME" =   paste(varString[x],df_list.FileInfo$Name, sep = "_"),
+                              "LAT" = df_list.FileInfo[,"LAT"],
+                              "LONG" = df_list.FileInfo[,"LONG"],
+                              "ELEVATION" = df_list.FileInfo[,"ELEVATION"])
 })
 
 
-
-
-
-
-
-
-write.csv(df_list.FileInfo[df_list.FileInfo$ID %in% c("A828","A837","A839","A840","A844","A853","A856","A880","A882","A883","A894"),], "AutomaticStation_Fork.csv" , row.names	= F)
-
-
-
+lapply(1:length(List_Fork), function(x){
+        write.table(List_Fork[[x]],
+                   paste0(varString[x],"fork.txt"),
+                   quote =F, row.names	= F,  sep = ",")
+  })
 
 
 
 ```
 
 ```{r PlotData}
-
 
 lapply(1:11,function(x){
 ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=HMD))+
@@ -168,21 +189,13 @@ ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=WND))+
   theme_bw()
   })
 
-
-
 ```
-
-
-
-
 
 
 ```{r Import inmet files - Conventional_Stations}
 
-
 list.weatherStations = list.files(path = ".\\NonAutomatic",pattern = "*.csv")[-54] 
 list.weatherStations = paste0(".\\NonAutomatic\\",list.weatherStations)
-
 
 weatherStations = lapply(list.weatherStations, function(x){
  read.delim(x, skip = 10, sep = ";" ,na.strings = "null", col.names = c("Date","EVAP","INSO","PCP","TMPmax","TMPmea","TMPmin","HMD","WND","NA"))[,1:9]})
@@ -215,7 +228,6 @@ df_list.FileInfo = lapply(1:length(df_list.SWAT), function(x){
                          "StationName" = unique(df_list.SWAT[[x]][,"Name"]))
   })
 
-
 df_list.FileInfo = do.call(rbind, df_list.FileInfo)
 full_df = do.call(rbind, df_list.SWAT)
 
@@ -228,15 +240,10 @@ List.WeatherStaGrb = full_df %>%
 
 write.csv(df_list.FileInfo[df_list.FileInfo$ID %in% c("83972","83932","83942","83941","83914","83917","83916"),] , "NonAutomaticStation_Fork.csv" , row.names	= F)
 
-
-
-?write.csv
 ```
 
 
-
 ```{r PlotDataConv}
-
 
 lapply(1:7,function(x){
 ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=HMD))+
@@ -246,7 +253,6 @@ ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=HMD))+
   ylim(c(0,100))+
   theme_bw()
   })
-
 
 lapply(1:7,function(x){
 ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=TMPmax))+
@@ -284,4 +290,38 @@ ggplot(List.WeatherStaGrb[[x]], aes(x=Date,y=INSO))+
   theme_bw()
   })
 
+
+
 ```
+
+
+```{r Fork files}
+### Fork files
+
+
+df_list.FileInfo
+
+list.weatherStations <- list.files(pattern = "*.txt")
+args_list <- strsplit(list.weatherStations, "[\\._]+")
+
+df_list <- lapply(1:length(args_list), function(x){
+  output_df <- data.frame("ID" = args_list[[x]][2],
+                         "NAME" = paste(args_list[[x]][1], args_list[[x]][2],args_list[[x]][3],args_list[[x]][4],sep = "_"))
+})
+
+full_df <- do.call(rbind, df_list)
+
+col_order <- c("ID", "NAME","LAT","LONG","ELEVATION")
+Fork_DF <- join(df_list.FileInfo, full_df, by = "ID")
+
+
+
+
+write.table(Fork_DF[,col_order] %>%
+   filter( grepl("PCP",NAME)), "PCPfork.txt",quote =F,  row.names	= F,
+              sep = ",")
+write.table(Fork_DF[,col_order] %>%
+   filter( !grepl("PCP",NAME)), "Qfork.txt",quote =F,  row.names	= F,
+              sep = ",")
+```
+

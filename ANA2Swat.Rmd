@@ -1,0 +1,218 @@
+---
+title: "ANAdatabasetoSwat"
+author: "Lima, M. Edberto"
+date: "29/04/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(RODBC) ### Acesss database conection
+library(tidyr)
+library(dplyr)
+library(lubridate)  ### Packpage to convert data
+library(tidyverse) ###
+library(plyr) ###
+library(plotly) ###
+library(ggplot2) ###
+
+```
+
+```{r Precipitation}
+
+# con <- odbcConnect("BcoFluPlu")
+db <- "D:\\Documentos\\OneDrive\\03 - Doutorado\\Tese\\Chapter III\\Guages\\ANA17032021_Edberto\\BcoFluPlu.mdb"
+con2 <- odbcConnectAccess2007(db)
+
+sqlTables(con2, tableType = "TABLE")$TABLE_NAME
+
+# Chuvas <- sqlFetch(con2, "Chuvas")
+# Vazoes <- sqlFetch(con2, "Vazoes")
+
+qryPCP <- "SELECT * FROM Chuvas WHERE EstacaoCodigo =  2851022 OR 
+EstacaoCodigo =  2852014 OR 
+EstacaoCodigo =  2852031 OR 
+EstacaoCodigo =  2951010 OR 
+EstacaoCodigo =  2951070 OR 
+EstacaoCodigo =  2851044 OR 
+EstacaoCodigo =  2852004 OR 
+EstacaoCodigo =  2851020 OR 
+EstacaoCodigo =  2851021 OR 
+EstacaoCodigo =  2851024 OR 
+EstacaoCodigo =  2851028 OR 
+EstacaoCodigo =  2852009 OR 
+EstacaoCodigo =  2852024 OR 
+EstacaoCodigo =  2852046 OR 
+EstacaoCodigo =  2852050 OR 
+EstacaoCodigo =  2952001 OR 
+EstacaoCodigo =  2851005 OR
+EstacaoCodigo =  2952038 OR
+EstacaoCodigo =  2851052 OR
+EstacaoCodigo =  2852016 OR
+EstacaoCodigo =  2852052 OR
+EstacaoCodigo =  2852053 OR
+EstacaoCodigo =  86560000 OR 
+EstacaoCodigo =  86580000 OR 
+EstacaoCodigo =  86510000"
+
+
+TblPrecipitation <- sqlQuery(con2, qryPCP)
+
+TblPrecipitation$Data <- as.Date(TblPrecipitation$Data,format = "%d/%m/%Y")
+tblchuvaANA1998_2019 <- TblPrecipitation %>%
+  arrange(Data , EstacaoCodigo) %>%
+  filter(Data >= as.Date('1998-01-01'))
+
+
+listANA <- lapply(1:nrow(tblchuvaANA1998_2019), function(x){
+  output_df <- data.frame("Code"  = tblchuvaANA1998_2019[x,"EstacaoCodigo"],
+                         "NivelConsistencia" = tblchuvaANA1998_2019[x,"NivelConsistencia"],
+                         "Date" = seq.Date(as.Date(tblchuvaANA1998_2019[x,"Data"], "%d/%m/%Y"), 
+                                           by = "day", length.out = days_in_month(as.Date(tblchuvaANA1998_2019[x,"Data"], "%d/%m/%Y"))),
+                         "TipoMedicaoChuvas" = tblchuvaANA1998_2019[x,"TipoMedicaoChuvas"],
+                         "PCP" = (t(tblchuvaANA1998_2019[x,] %>% 
+                                        select(starts_with("Chuva"),-contains("Status")) %>% 
+                                        select(1:days_in_month(as.Date(tblchuvaANA1998_2019[x,"Data"], "%d/%m/%Y"))))),
+                         "ChuvaStatus" = (t(tblchuvaANA1998_2019[x,] %>% 
+                                              select(starts_with("Chuva") & ends_with("Status")) %>% 
+                                              select(1:days_in_month(as.Date(tblchuvaANA1998_2019[x,"Data"], "%d/%m/%Y")))))
+  ) 
+  names(output_df)[5:6] <- c("PCP", "ChuvaStatus")
+  return(output_df)
+}
+)
+
+PCPANA <- do.call(rbind, listANA)
+PCPANA[is.na(PCPANA)] <- -99.0
+
+List.WeatherStaGrb = PCPANA %>%
+                        group_split(Code)
+
+lapply(1:length(List.WeatherStaGrb), function(x){
+  write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[x]][,"Date"], Date = format(Date , "%Y%m%d"))[,1]),
+                    # List.WeatherStaGrb[[x]][,c("PCP")]),
+               signif(List.WeatherStaGrb[[x]][,c("PCP")],4)),
+              col.names = FALSE, 
+              row.names	= F,
+              sep = ",",
+              file=paste0("PCP_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",
+                          as.numeric(transform(List.WeatherStaGrb[[x]][1,"Date"], Date = format(Date , "%Y%m%d"))), "_",
+                          as.numeric(transform(List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[x]])[1],"Date"], Date = format(Date , "%Y%m%d"))),
+                          ".txt"))
+})
+
+
+```
+
+
+
+```{r Q}
+
+qryQ <- "SELECT * FROM Vazoes WHERE EstacaoCodigo =  2851022 OR 
+EstacaoCodigo =  2852014 OR 
+EstacaoCodigo =  2852031 OR 
+EstacaoCodigo =  2951010 OR 
+EstacaoCodigo =  2951070 OR 
+EstacaoCodigo =  2851044 OR 
+EstacaoCodigo =  2852004 OR 
+EstacaoCodigo =  2851020 OR 
+EstacaoCodigo =  2851021 OR 
+EstacaoCodigo =  2851024 OR 
+EstacaoCodigo =  2851028 OR 
+EstacaoCodigo =  2852009 OR 
+EstacaoCodigo =  2852024 OR 
+EstacaoCodigo =  2852046 OR 
+EstacaoCodigo =  2852050 OR 
+EstacaoCodigo =  2952001 OR 
+EstacaoCodigo =  86560000 OR 
+EstacaoCodigo =  86580000 OR 
+EstacaoCodigo =  86510000"
+
+TblQ <- sqlQuery(con2, qryQ)
+
+TblQ$Data <- as.Date(TblQ$Data,format = "%d/%m/%Y")
+tblQANA1998_2019 <- TblQ %>%
+  arrange(Data , EstacaoCodigo) %>%
+  filter(Data >= as.Date('1998-01-01'))
+
+listQANA <- lapply(1:nrow(tblQANA1998_2019), function(x){
+  output_df <- data.frame("Code"  = tblQANA1998_2019[x,"EstacaoCodigo"],
+                         "NivelConsistencia" = tblQANA1998_2019[x,"NivelConsistencia"],
+                         "Date" = seq.Date(as.Date(tblQANA1998_2019[x,"Data"], "%d/%m/%Y"), 
+                                           by = "day", length.out = days_in_month(as.Date(tblQANA1998_2019[x,"Data"], "%d/%m/%Y"))),
+                         "MetodoObtencaoVazoes" = tblQANA1998_2019[x,"MetodoObtencaoVazoes"],
+                         "Q" = (t(tblQANA1998_2019[x,] %>% 
+                                        select(starts_with("Vazao"),-contains("Status")) %>% 
+                                        select(1:days_in_month(as.Date(tblQANA1998_2019[x,"Data"], "%d/%m/%Y"))))),
+                         "QStatus" = (t(tblQANA1998_2019[x,] %>% 
+                                              select(starts_with("Vazao") & ends_with("Status")) %>% 
+                                              select(1:days_in_month(as.Date(tblQANA1998_2019[x,"Data"], "%d/%m/%Y")))))
+  ) 
+  names(output_df)[5:6] <- c("Q", "QStatus")
+  return(output_df)
+})
+
+QANA <- do.call(rbind, listQANA)
+QANA[is.na(QANA)] <- -99.0
+
+List.WeatherStaGrb = QANA %>%
+                      group_split(Code)
+
+lapply(1:length(List.WeatherStaGrb), function(x){
+  write.table(cbind(as.numeric(transform(List.WeatherStaGrb[[x]][,"Date"], Date = format(Date , "%Y%m%d"))[,1]),
+                    # List.WeatherStaGrb[[x]][,c("Q")]),
+                    round(List.WeatherStaGrb[[x]][,c("Q")],2)),
+              col.names = FALSE, 
+              row.names	= F,
+              sep = ",",
+              file=paste0("Q_",unique(List.WeatherStaGrb[[x]][,"Code"]),"_",
+                          as.numeric(transform(List.WeatherStaGrb[[x]][1,"Date"], Date = format(Date , "%Y%m%d"))), "_",
+                          as.numeric(transform(List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[x]])[1],"Date"], Date = format(Date , "%Y%m%d"))),
+                          ".txt"))
+})
+
+
+
+```
+
+```{r}
+
+
+qryStaion <- "SELECT * FROM Estacao WHERE Codigo =  2851022 OR 
+                                          Codigo =  2852014 OR 
+                                          Codigo =  2852031 OR 
+                                          Codigo =  2951010 OR 
+                                          Codigo =  2951070 OR 
+                                          Codigo =  2851044 OR 
+                                          Codigo =  2852004 OR 
+                                          Codigo =  2851020 OR 
+                                          Codigo =  2851021 OR 
+                                          Codigo =  2851024 OR 
+                                          Codigo =  2851028 OR 
+                                          Codigo =  2852009 OR 
+                                          Codigo =  2852024 OR 
+                                          Codigo =  2852046 OR 
+                                          Codigo =  2852050 OR 
+                                          Codigo =  2952001 OR 
+                                          Codigo =  2851005 OR
+                                          Codigo =  2952038 OR
+                                          Codigo =  2851052 OR
+                                          Codigo =  2852016 OR
+                                          Codigo =  2852052 OR
+                                          Codigo =  2852053 OR
+                                          Codigo =  86560000 OR 
+                                          Codigo =  86580000 OR 
+                                          Codigo =  86510000"
+
+TblStaion <- sqlQuery(con2, qryStaion)
+TblStaion <- TblStaion[,c("Codigo","Nome","Latitude","Longitude","Altitude")]
+colnames(TblStaion) <- c("ID","NAME","LAT","LONG","ELEVATION")
+
+
+
+ 
+
+```
+
