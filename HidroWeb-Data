@@ -1,56 +1,131 @@
+library(RODBC) ### Acesss database conection
+library(tidyr)
+library(dplyr)
 library(lubridate)  ### Packpage to convert data
 library(tidyverse) ###
 library(plyr) ###
 library(plotly) ###
 library(ggplot2) ###
+library(zoo)
 
-tblchuvaANA = read.delim("D:/Documentos/Chuvas.csv", sep = ";")
-tblchuvaANA$Data <- as.Date(tblchuvaANA$Data,
-                                     format = "%d/%m/%Y")
-tblchuvaANA1998_2019 <- tblchuvaANA %>%
-                        filter(Data >= as.Date('1998-01-01'))
+setwd("C:/temp/SwatProject_Grb") ### Select folder 
 
-listANA = lapply(1:nrow(tblchuvaANA1998_2019), function(x){
-                    output_df = data.frame("EstacaoCodigo"  = tblchuvaANA1998_2019[x,"EstacaoCodigo"],
-                                            "NivelConsistencia" = tblchuvaANA1998_2019[x,"NivelConsistencia"],
-                                            "Data" = seq.Date(as.Date(tblchuvaANA1998_2019[x,"Data"], "%d/%m/%Y"), 
-                                               by = "day", length.out = days_in_month(as.Date(tblchuvaANA1998_2019[x,"Data"], "%d/%m/%Y"))),
-                                            "TipoMedicaoChuvas" = tblchuvaANA1998_2019[x,"TipoMedicaoChuvas"],
-                                            "Chuva" = (t(tblchuvaANA1998_2019[x,] %>% 
-                                                             select(starts_with("Chuva"),-contains("Status")) %>% 
-                                                             select(1:days_in_month(as.Date(tblchuvaANA1998_2019[x,"Data"], "%d/%m/%Y"))))),
-                                            "ChuvaStatus" = (t(tblchuvaANA1998_2019[x,] %>% 
-                                                             select(starts_with("Chuva") & ends_with("Status")) %>% 
-                                                             select(1:days_in_month(as.Date(tblchuvaANA1998_2019[x,"Data"], "%d/%m/%Y")))))
-                                    ) 
-                                    names(output_df)[5:6] = c("Chuva", "ChuvaStatus")
-                                    return(output_df)
-}
-                )
+# connect to Access Data base file
 
-Chuva_Ana = do.call(rbind, listANA)
+db <- ".\\Gauges\\ANA\\BcoFluPlu.mdb" ### Database files (.mdb) can be acessed by https://www.snirh.gov.br/hidroweb/ or requested by email - hidro@ana.gov.br
+con <- odbcConnectAccess2007(db)
 
+### Select weather gauge Stations
+qryPCP <- "SELECT * FROM Chuvas WHERE (year(Data) >= 2008) AND
+                                      (EstacaoCodigo =  2851022 OR 
+                                      EstacaoCodigo =  2951010 OR 
+                                      EstacaoCodigo =  2951070 OR 
+                                      EstacaoCodigo =  2851044 OR 
+                                      EstacaoCodigo =  2851021 OR 
+                                      EstacaoCodigo =  2851024 OR 
+                                      EstacaoCodigo =  2852046 OR 
+                                      EstacaoCodigo =  2852050 OR 
+                                      EstacaoCodigo =  2952001 OR 
+                                      EstacaoCodigo =  2952038 OR
+                                      EstacaoCodigo =  2851052 OR
+                                      EstacaoCodigo =  2852052 OR
+                                      EstacaoCodigo =  2852053 )
+                                      order by EstacaoCodigo , Data" 
 
-### Plot https://towardsdatascience.com/time-series-calendar-heatmaps-9f576578fcfe
-Chuva_Ana$weekday  =  as.POSIXlt(Chuva_Ana$Data)$wday
-Chuva_Ana$weekdayf<-factor(Chuva_Ana$weekday,levels=rev(0:6),labels=rev(c("Mon","Tue","Wed","Thu","Fri","Sat","Sun")),ordered=TRUE) 
-Chuva_Ana$monthf<-factor(month(Chuva_Ana$Data),levels=as.character(1:12),labels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"),ordered=TRUE) 
-Chuva_Ana$yearmonth<- factor(as.yearmon(Chuva_Ana$Data))
+### Get access to precipation table
+TblPrecipitation <- sqlQuery(con, qryPCP)
 
-Chuva_Ana$week <- as.numeric(format(Chuva_Ana$Data,"%W"))
-Chuva_Ana<-ddply(Chuva_Ana,.(yearmonth),transform,monthweek=1+week-min(week))
-Chuva_Ana.Est= split(Chuva_Ana, f = Chuva_Ana$EstacaoCodigo[drop = TRUE])
+### Format and reorder the preciptation data 
+lstPrecipitation <- lapply(1:nrow(TblPrecipitation), function(x){
+                      output_df <- data.frame("Code"  = TblPrecipitation[x,"EstacaoCodigo"],
+                                              "NivelConsistencia" = TblPrecipitation[x,"NivelConsistencia"],
+                                              "Date" = seq.Date(floor_date(as.Date(TblPrecipitation[x,"Data"], "%d/%m/%Y", tz = '' ),"month"),
+                                                                by = "day", length.out = days_in_month(as.Date(TblPrecipitation[x,"Data"], "%d/%m/%Y", tz = ''))),
+                                              "TipoMedicaoChuvas" = TblPrecipitation[x,"TipoMedicaoChuvas"],
+                                              "PCP" = round(t(TblPrecipitation[x,] %>%
+                                                                select(starts_with("Chuva"),-contains("Status")) %>%
+                                                                select(1:days_in_month(as.Date(TblPrecipitation[x,"Data"], "%d/%m/%Y", tz = '')))),2),
+                                              "ChuvaStatus" = (t(TblPrecipitation[x,] %>%
+                                                                   select(starts_with("Chuva") & ends_with("Status")) %>%
+                                                                   select(1:days_in_month(as.Date(TblPrecipitation[x,"Data"], "%d/%m/%Y", tz = ''))))))
+                                              names(output_df)[5:6] <- c("PCP", "ChuvaStatus")
+                      return(output_df)
+                    })
 
-lapply(names(Chuva_Ana.Est), function(x) 
-  ggplot(Chuva_Ana.Est[[x]], aes(monthweek, weekdayf, fill = Chuva)) + 
-          geom_tile(colour = "white") + 
-          facet_grid(year(Chuva_Ana.Est[[x]]$Data)~monthf) + 
-          scale_fill_gradientn( colours = c("white", "lightblue", "blue"), values = c(0,0.1,1)) + 
-          xlab("Week of Month") + 
-          ylab("") + 
-          theme_classic()+
-          ggtitle(paste0("Time-Series Rain ",x)) + 
-          labs(fill = "Chuva"))
+### Unlist
+PCP.ANA <- do.call(rbind, lstPrecipitation)
 
+### Order PCP by gauge stations and fill date gaps
+List.WeatherStaGrb <- PCP.ANA %>%
+                     group_split(Code)
 
+### Fill gaps and format lists to produce a Heatmap graph
+List.WeatherStaGrb <- lapply(1:length(List.WeatherStaGrb), function(x){
+                                         List.WeatherStaGrb[[x]] %>%
+                                          complete(Date = seq(ymd("2008-01-01"), #### Fill the gaps on data
+                                                              ymd("2020-12-31"),1),
+                                                   fill = list(Code = as.character(unique(List.WeatherStaGrb[[x]][,"Code"])),
+                                                               PCP = -99))  %>%  ### Riquired by SWAT
+                                           mutate( year = factor(year(Date)), ### To creat a calendar organize months and weeks
+                                                   weekday = wday(Date, label = T, week_start = 1), 
+                                                   yearmonth =  factor(as.yearmon(Date)),
+                                                   month = month(Date, label = T, abbr = F),
+                                                   wk = as.POSIXlt(Date)$wday,
+                                                   week = as.numeric(isoweek(Date)),
+                                                   day = day(Date)) %>%
+                                           mutate(week = case_when(month == "December" & week == 1 ~ 53, ### Correct weeks of year
+                                                  month == "January" & week %in% 52:53 ~ 0,
+                                                  TRUE ~ week),
+                                                    pcat = cut(PCP, c(-1, 0, .5, 1:5, 7, 9, 15, 20, 25, 30, 200)))%>% ### Create class of PCP
+                                           ddply(.(yearmonth),transform,monthweek=1+week-min(week)) ### Convert weeks of year to month
+                                     })
+
+### Set color to Heatmap
+pubu <- RColorBrewer::brewer.pal(9, "BuPu")[3:9]
+col_p <- colorRampPalette(pubu)
+
+### Create a heatmapCalendar
+lapply(1:length(List.WeatherStaGrb), function(x){ 
+  ggplot(List.WeatherStaGrb[[x]], 
+         aes(weekday, monthweek, fill = pcat)) +
+    geom_tile(colour = "white", size = .4)  + 
+    guides(fill = guide_colorsteps(barwidth = 15,
+                                   barheight = .3,
+                                   title.position = "top")) +
+    scale_fill_manual(values = c("gray90", col_p(13)),
+                      na.value = "grey65", drop = FALSE) +
+    facet_grid(year~ month, scales = "free_y") +
+    labs(subtitle = paste("Weather Station code:",unique(List.WeatherStaGrb[[x]]$Code)), 
+         title = "Daily precipitation",
+         caption = "Source: ANA - Agência Nacional de Águas e Saneamento Básico",
+         fill = "mm") +
+    scale_y_reverse() +
+    theme_classic()+
+    theme(legend.position = "bottom",
+          legend.text = element_text( hjust = .5),
+          legend.title = element_text(size = 8, hjust = 1),
+          axis.title = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text.y = element_blank(),
+          axis.text.x  = element_text(angle = 90,hjust=1, vjust=0.2),
+          panel.grid = element_blank(),
+          panel.background = element_blank(),
+          plot.caption =  element_text( hjust = 1, size = 8),
+          text = element_text(size=8))
+  # ggsave(file= paste0(unique(dat_pr[[x]]$Code),"_PCP.png"),  ### Save files 
+  #         width = 26, height = 18, units = "cm",dpi = 300)
+})
+
+### Write a Swat Files - I need to check the initial date
+lapply(1:length(List.WeatherStaGrb), function(x){
+  write.table(List.WeatherStaGrb[[x]][,c("PCP")],
+    col.names = 20080501, ### Start date
+    row.names	= F,
+    quote  = F,
+    sep = ",",
+    file=paste0("PCP_",unique(List.WeatherStaGrb[[x]][1,"Code"]),"_",
+                format(as.Date(List.WeatherStaGrb[[x]][1,"Date"]),"%Y%m%d"),"_",
+                format(as.Date(List.WeatherStaGrb[[x]][dim(List.WeatherStaGrb[[x]])[1],"Date"],"Date"),"%Y%m%d"),
+                ".txt"))
+})
 
